@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import, print_function, unicode_literals
 
-import asyncio
-import json
+# import asyncio
+# import json
 import logging
 import pprint
-import ssl
-from typing import Dict, List, Optional, Union
+# import ssl
+from typing import AsyncGenerator, Union
 
 import aiohttp
-import certifi  # TODO: needed?
+# import certifi  # TODO: needed?
 
-from abot.bot import Backend, BotObject, Channel
+from abot.bot import Backend, BotObject, Channel, Entity, Event, MessageEvent
 
 logger = logging.getLogger('abot.telegram')
 
@@ -32,6 +32,124 @@ class TelegramChannel(TelegramObject, Channel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._telegram_backend._register_user(self._data)
+
+
+class TelegramEntity(TelegramObject, Entity):
+    async def tell(self, text: str):
+        pass
+
+    @property
+    def username(self):
+        return self._data.get('username')
+
+    @property
+    def id(self):
+        return self._data.get('id')
+
+    # TODO: adapt this method to Telegram use case
+    def __repr__(self):
+        cls = self.__class__.__name__
+        userid = self.id
+        username = self.username
+        dubs = self.dubs
+        played = self.played_count
+        skips = self.skips
+        songs = self.songs_in_queue
+        return f'<{cls} {username}#{userid} {dubs}/{played} {skips}(S) ##{songs}>'
+
+    def __eq__(self, other):
+        if not isinstance(other, self.__class__):
+            return False
+        if self.id == other.id:
+            return True
+        return False
+
+
+class TelegramEvent(TelegramObject, Event):
+    _data_type = ''
+
+    # TODO: necessary?
+    @classmethod
+    def from_data(cls, data, telegram_backend: 'TelegramBackend'):
+        for cl in cls.__subclasses__():
+            if cl._data_type == data['type']:
+                return cl(data, telegram_backend)
+            else:
+                return cls(data, telegram_backend)
+
+    # TODO: necessary?
+    @property
+    def sender(self) -> TelegramEntity:
+        pass
+
+    # TODO: necessary?
+    @property
+    def channel(self) -> TelegramChannel:
+        """Return the channel user to send the TelegramEvent."""
+        if hasattr(self, '_channel'):
+            self._channel: TelegramChannel
+            return self._channel
+        raise ValueError('Channel is not set')
+
+    # TODO: necessary?
+    @channel.setter
+    def channel(self, channel: TelegramChannel):
+        if hasattr(self, '_channel'):
+            raise ValueError(f'Channel {self._channel} is in place, cannot replace with {channel}')
+        self._channel = channel
+
+    # TODO: necessary?
+    async def reply(self, text: str, to: str = None):
+        if to is None:
+            to = f"@{self.sender.username}"
+        return await self._channel.say(f"{to}: {text}")
+
+    # TODO: necessary?
+    def __repr__(self):
+        cls = self.__class__.__name__
+        return f"<{cls} #{self._data['type']}>"
+
+class TelegramMesasgeEvent(TelegramEvent, MessageEvent):
+    _data_type = 'chat-message'
+
+    # TODO: adapt this to Telegram use case
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dubtrack_backend._register_user(self._data.get('user'))
+
+    # TODO: adapt this to Telegram use case
+    @property
+    def sender(self) -> TelegramEntity:
+        return self._telegram_backend._get_entity(self._data.get('user', {}).get('username'))
+
+    @property
+    def text(self):
+        return self._data.get('message')
+
+    @property
+    def message_id(self):
+        return self._data.get('chatid')
+
+    def __repr__(self):
+        cls = self.__class__.__name__
+        chatid = self.message_id
+        sender = self.sender
+        msg = self.text
+        return f'<{cls}#{chatid} {sender} "{msg}">'
+
+
+class TelegramCommand(TelegramMesasgeEvent):
+    _data_type = 'chat-command'
+
+    # TODO: adapt this to Telegram use case
+    @property
+    def sender(self) -> TelegramEntity:
+        return self._telegram_backend._get_entity(self._data.get('username'))
+
+    def __repr__(self):
+        cls = self.__class__.__name__
+        sender = self.sender
+        return f'<{cls} {sender}>'
 
 
 class TelegramBackend(Backend):
@@ -60,12 +178,13 @@ class TelegramBackend(Backend):
         if self.base_url:
             self._token_is_valid = await self.test_bot_token()
 
-    async def consume(self):
+    async def consume(self) -> AsyncGenerator['TelegramEvent', None]:
         # TODO: remember this method is an async generator, which means it needs to yield stuff asynchronously
         logger.info(f"Consuming...")
-        response = await self._get_updates()
-        # TODO: find how to pass the update (response) to each event handler to respond to commands, etc.
-        yield None
+        # TODO: create an infinite? loop that does long polling to get updates, and returns constantly
+        updates = await self._get_updates()
+        for update in updates:
+            yield update
 
     async def send_message(self, chat_id: Union[int, str], text: str) -> dict:
         """Send a text message to chat_id.
@@ -135,17 +254,15 @@ class TelegramBackend(Backend):
             # 'allowed_updates': self._allowed_updates,  # TODO: add support for selective updates
         }
         response = await self._api_post(url, body)
-        if response['ok'] and response['result']:
-            self.last_update_id = response['result'][-1]['update_id']
+        if response['ok'] and 'result' in response:
+            updates = response['result']
+            if len(updates) > 0:
+                self.last_update_id = response['result'][-1]['update_id']
+            return response['result']
             # TODO: handle a situation when there are no new results:
             # send the latest update ID on the request, and you should not get any new update back
 
-
-            import ipdb; ipdb.set_trace()
-
-
         # TODO: store latest received update ID
-        return result
 
 
 # class BaseBot:

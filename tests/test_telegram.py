@@ -8,7 +8,6 @@ import pytest
 # import ipdb
 # import unittest.mock as mock
 
-from abot.bot import Bot
 from abot.telegram import TelegramBackend
 from tests.conftest import get_config
 
@@ -67,10 +66,12 @@ async def test_backend_consume(token):
     backend.configure(token=token)
     await backend.initialize()
     async for event in backend.consume():
+        # TODO: find how to pass the update (response) to each event handler to
+        #       respond to commands, etc.
         import ipdb; ipdb.set_trace()
         print(event)
     import ipdb; ipdb.set_trace()
-    print('kk')
+    print('end of test')
 
 
 # @pytest.mark.skip
