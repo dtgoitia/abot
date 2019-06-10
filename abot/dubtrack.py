@@ -611,14 +611,14 @@ class DubtrackWS:
             raise ValueError('Once started, cannot login')
         self.userpass = (username, password)
 
-    async def api_post(self, url, body):
+    async def api_post(self, url: str, body: dict) -> dict:
         async with self.aio_session.post(url, json=body) as resp:
             logger.debug(f'Request: {url} - {body}')
             response = await resp.json()
             logger.debug(f'Response: {pprint.pformat(response)}')
         return response['data']
 
-    async def api_get(self, url):
+    async def api_get(self, url: str):
         async with self.aio_session.get(url) as resp:
             logger.debug(f'Request: {url}')
             response = await resp.json()
