@@ -9,3 +9,4 @@ __pycache__/
 /.coverage
 /coverage.xml
 /test-reports/
+test_config.json
