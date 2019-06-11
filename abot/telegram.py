@@ -2,11 +2,12 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 # import asyncio
+from collections import defaultdict
 # import json
 import logging
 import pprint
 # import ssl
-from typing import AsyncGenerator, Union
+from typing import Any, AsyncGenerator, Dict, Optional, Union
 
 import aiohttp
 # import certifi  # TODO: needed?
@@ -29,9 +30,19 @@ class TelegramObject(BotObject):
 
 
 class TelegramChannel(TelegramObject, Channel):
+    """Represents a Telegram conversation.
+
+    A TelegramChannel represents one of the following concepts in Telegram:
+      - Telegram user
+      - Telegram channel
+      - Telegram conversation
+      - Telegram group
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._telegram_backend._register_user(self._data)
+
+    # TODO: model conversation ID, group ID, channel ID
 
 
 class TelegramEntity(TelegramObject, Entity):
@@ -69,15 +80,6 @@ class TelegramEvent(TelegramObject, Event):
     _data_type = ''
 
     # TODO: necessary?
-    @classmethod
-    def from_data(cls, data, telegram_backend: 'TelegramBackend'):
-        for cl in cls.__subclasses__():
-            if cl._data_type == data['type']:
-                return cl(data, telegram_backend)
-            else:
-                return cls(data, telegram_backend)
-
-    # TODO: necessary?
     @property
     def sender(self) -> TelegramEntity:
         pass
@@ -109,36 +111,113 @@ class TelegramEvent(TelegramObject, Event):
         cls = self.__class__.__name__
         return f"<{cls} #{self._data['type']}>"
 
-class TelegramMesasgeEvent(TelegramEvent, MessageEvent):
+
+class TelegramMessageEvent(TelegramEvent, MessageEvent):
+    """Telegram message event data
+
+    Message from a user in a 1 to 1 conversation with the bot:
+    {'message': {'chat': {'first_name': 'David',
+                          'id': 185639288,
+                          'type': 'private',
+                          'username': 'david'},
+                 'date': 1560196082,
+                 'from': {'first_name': 'David',
+                          'id': 185639288,
+                          'is_bot': False,
+                          'language_code': 'en',
+                          'username': 'david'},
+                 'message_id': 42,
+                 'text': 'asd'},
+     'update_id': 218871170}
+
+    Message from a user in a group where the bot is admin:
+    {'message': {'chat': {'all_members_are_administrators': False,
+                          'id': -362869152,
+                          'title': 'test_group',
+                          'type': 'group'},
+                 'date': 1560317091,
+                 'from': {'first_name': 'David',
+                          'id': 185639288,
+                          'is_bot': False,
+                          'language_code': 'en',
+                          'username': 'david'},
+                 'message_id': 48,
+                 'text': 'now the bot is admin as well'},
+     'update_id': 218871177}]}
+    """
     _data_type = 'chat-message'
 
-    # TODO: adapt this to Telegram use case
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._dubtrack_backend._register_user(self._data.get('user'))
+        user_data = self._data.get('message').get('from')
+
+        self._telegram_backend._register_user(user_data)
 
     # TODO: adapt this to Telegram use case
     @property
     def sender(self) -> TelegramEntity:
-        return self._telegram_backend._get_entity(self._data.get('user', {}).get('username'))
+        sender = self._data.get('message', {}).get('from').get('username')
+        return self._telegram_backend._get_entity(sender)
 
     @property
     def text(self):
-        return self._data.get('message')
+        return self._data.get('message', {}).get('text')
 
     @property
     def message_id(self):
-        return self._data.get('chatid')
+        return self._data.get('message', {}).get('chat').get('id')
 
     def __repr__(self):
         cls = self.__class__.__name__
         chatid = self.message_id
-        sender = self.sender
+        sender = self.sender  # TODO: the __repr__ of this sender looks ugly because it's not adapted to Telegram yet
         msg = self.text
         return f'<{cls}#{chatid} {sender} "{msg}">'
 
 
-class TelegramCommand(TelegramMesasgeEvent):
+class TelegramNewChatMember(TelegramEvent):
+    """Message received when the bot was added to the channel
+     {'message': {'chat': {'all_members_are_administrators': True,
+                           'id': -362869152,
+                           'title': 'test_group',
+                           'type': 'group'},
+                  'date': 1560316178,
+                  'from': {'first_name': 'David',
+                           'id': 185639288,
+                           'is_bot': False,
+                           'language_code': 'en',
+                           'username': 'david'},
+                  'message_id': 47,
+                  'new_chat_member': {'first_name': 'dtg',
+                                      'id': 849011351,
+                                      'is_bot': True,
+                                      'username': 'dtg_bot'},
+                  'new_chat_members': [{'first_name': 'dtg',
+                                        'id': 849011351,
+                                        'is_bot': True,
+                                        'username': 'dtg_bot'}],
+                  'new_chat_participant': {'first_name': 'dtg',
+                                           'id': 849011351,
+                                           'is_bot': True,
+                                           'username': 'dtg_bot'}},
+    """
+    pass
+
+
+class TelegramChannelPost(TelegramEvent):
+    """Update emited by the Telegram Bot API when a user posts a message into a channel.
+    {'channel_post': {'chat': {'id': -1001390499227,
+                               'title': 'test_channel',
+                               'type': 'channel'},
+                      'date': 1560316939,
+                      'message_id': 5,
+                      'text': 'hey!'},
+     'update_id': 218871176}
+    """
+    pass
+
+
+class TelegramCommand(TelegramMessageEvent):
     _data_type = 'chat-command'
 
     # TODO: adapt this to Telegram use case
@@ -168,6 +247,7 @@ class TelegramBackend(Backend):
         self._updates_timeout: int = 297
         # TODO: remove timeout=0 (short-polling), only for testing purposes
         self._updates_timeout = 0
+        self.telegram_users = defaultdict(dict)
 
     def configure(self, *, token=None):
         if token:
@@ -179,12 +259,19 @@ class TelegramBackend(Backend):
             self._token_is_valid = await self.test_bot_token()
 
     async def consume(self) -> AsyncGenerator['TelegramEvent', None]:
-        # TODO: remember this method is an async generator, which means it needs to yield stuff asynchronously
+        # TODO: create an infinite? loop that does long polling to get updates,
+        # and returns in an infinite? loop
         logger.info(f"Consuming...")
-        # TODO: create an infinite? loop that does long polling to get updates, and returns constantly
+        # TODO: check the format of the log and ensure it consistent with the
+        # rest of the logs, also ensure it contains TelegramBackend somewhere
         updates = await self._get_updates()
         for update in updates:
-            yield update
+            import ipdb; ipdb.set_trace()
+            if 'message' in update:
+                event = TelegramMessageEvent(update, self)
+            else:
+                event = TelegramEvent(update, self)  # type: ignore
+            yield event
 
     async def send_message(self, chat_id: Union[int, str], text: str) -> dict:
         """Send a text message to chat_id.
@@ -244,6 +331,10 @@ class TelegramBackend(Backend):
         pass
 
     async def _get_updates(self):
+        """Returns a list of updates.
+
+        Example:
+        """
         if self._token_is_valid is False:
             return
         url = self._create_url(self._GET_UPDATES)
@@ -256,13 +347,55 @@ class TelegramBackend(Backend):
         response = await self._api_post(url, body)
         if response['ok'] and 'result' in response:
             updates = response['result']
-            if len(updates) > 0:
-                self.last_update_id = response['result'][-1]['update_id']
-            return response['result']
-            # TODO: handle a situation when there are no new results:
+            # TODO uncomment these lines to mark updates as read in the Telegram API
+            # if len(updates) > 0:
+            #     last_update_id = updates[-1]['update_id']
+            #     self._updates_offset = last_update_id
+            return updates
+            # TODO: test a situation when there are no new results:
             # send the latest update ID on the request, and you should not get any new update back
 
-        # TODO: store latest received update ID
+    def _register_user(self, user_data) -> Optional[TelegramEntity]:
+        """User data structure:
+        {'first_name': 'David',
+        'id': 185639288,
+        'is_bot': False,
+        'language_code': 'en',
+        'username': 'david'}
+        """
+        user_id = None
+        update_dict: Dict[str, Any] = {}
+        if not user_data:
+            return None
+        if 'id' in user_data:
+            user_id = user_data['id']
+        if 'first_name' in user_data:
+            update_dict['first_name'] = user_data['first_name']
+        if 'username' in user_data:
+            update_dict['username'] = user_data['username']
+
+        self.telegram_users[user_id].update(update_dict)
+        # TODO: is this complete?
+
+    def _get_entity(self, id_or_name: str):  # TODO: are return type
+        # TODO: adapt to Telegram case
+        user_data = self._get_user_data(id_or_name)
+        if not user_data:
+            logger.info(f'Information for user {id_or_name} not available')
+            return
+        return user_data
+
+    def _get_user_data(self, id_or_name):  # TODO: are return type
+        # TODO: adapt to Telegram case
+        for id, user_data in self.telegram_users.items():
+            if id_or_name == id:
+                data = {'id': id}
+                data.update(user_data)
+                return data
+            elif id_or_name == user_data.get('username'):
+                data = {'id': id}
+                data.update(user_data)
+                return data
 
 
 # class BaseBot:

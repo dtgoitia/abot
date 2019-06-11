@@ -3,13 +3,87 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 # import logging
 
-# import asynctest as am
+import asynctest as am
 import pytest
-# import ipdb
-# import unittest.mock as mock
 
-from abot.telegram import TelegramBackend
+from abot.telegram import TelegramBackend, TelegramMessageEvent
 from tests.conftest import get_config
+
+
+@pytest.fixture
+def token():
+    """Get Telegram Bot API token from the configuration file or environment variable."""
+    return get_config('TOKEN')
+
+
+@pytest.fixture
+def backend(token):
+    """Return an authenticated TelegramBackend instance."""
+    backend = TelegramBackend()
+    backend.configure(token=token)
+    return backend
+
+
+@pytest.fixture
+def mocked_backend_token(mocker):
+    """Patch to TelegramBackend to skip the token validation."""
+    with am.patch('abot.telegram.TelegramBackend.test_bot_token', new=am.CoroutineMock()) as m:
+        m.return_value = True
+        yield m
+
+
+@pytest.fixture
+def mocked_backend_updates(mocker):
+    """Patch to TelegramBackend to fake the updates received from the Telegram Bot API."""
+    with am.patch('abot.telegram.TelegramBackend._get_updates', new=am.CoroutineMock()) as m:
+        m.return_value = 'blah'
+        yield m
+
+
+@pytest.fixture
+@pytest.mark.asyncio
+async def mocked_initialized_backend(mocked_backend_token, mocked_backend_updates):
+    """Return an initialized TelegramBackend instance."""
+    backend = TelegramBackend()
+    backend.configure(token=token)
+    await backend.initialize()
+    return backend
+
+
+@pytest.fixture
+def chat_message():
+    """Update sample for a message from a user to a bot in an individual conversation."""
+    return [{'message': {'chat': {'first_name': 'David',
+                                  'id': 185639288,
+                                  'type': 'private',
+                                  'username': 'david'},
+                         'date': 1560196082,
+                         'from': {'first_name': 'David',
+                                  'id': 185639288,
+                                  'is_bot': False,
+                                  'language_code': 'en',
+                                  'username': 'david'},
+                         'message_id': 42,
+                         'text': 'asd'},
+             'update_id': 218871170}]
+
+
+@pytest.fixture
+def group_message():
+    """Update sample for a message from a user to group where the bot is admin."""
+    return {'message': {'chat': {'first_name': 'David',
+                                 'id': 185639288,
+                                 'type': 'private',
+                                 'username': 'david'},
+                        'date': 1560196082,
+                        'from': {'first_name': 'David',
+                                 'id': 185639288,
+                                 'is_bot': False,
+                                 'language_code': 'en',
+                                 'username': 'david'},
+                        'message_id': 42,
+                        'text': 'asd'},
+            'update_id': 218871170}
 
 
 # TelegramBackend =============================================================
@@ -38,8 +112,6 @@ async def test_telegram_backend_token_is_invalid():
     pass
 
 
-# TODO: test the send_message method
-
 @pytest.mark.skip
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -50,28 +122,30 @@ async def test_backend_checks_token_on_initialize():
     response = await backend.initialize()
     assert response  # TODO: finish this
 
+# @pytest.mark.skip
+@pytest.mark.asyncio
+async def test_backend_consumes_chat_message(mocked_initialized_backend, chat_message):
+    backend = mocked_initialized_backend
+    backend._get_updates.return_value = chat_message
 
-@pytest.fixture
-def token():
-    """Get Telegram Bot API token from the configuration file or environment variable."""
-    return get_config('TOKEN')
+    event: TelegramMessageEvent
+    async for event in backend.consume():
+        assert event.sender['id'] == 185639288
+        assert event.sender['first_name'] == 'David'
+        assert event.sender['username'] == 'david'
+        # TODO: add more assertions
 
 
+@pytest.mark.skip
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_backend_consume(token):
-    # Calls with the right offset if has called before
-    # token = get_config('TOKEN')
+async def test_backend_consume():
+    token = get_config('TOKEN')
     backend = TelegramBackend()
     backend.configure(token=token)
     await backend.initialize()
     async for event in backend.consume():
-        # TODO: find how to pass the update (response) to each event handler to
-        #       respond to commands, etc.
-        import ipdb; ipdb.set_trace()
         print(event)
-    import ipdb; ipdb.set_trace()
-    print('end of test')
 
 
 # @pytest.mark.skip
@@ -84,4 +158,4 @@ async def test_backend_consume(token):
 #     backend.configure(token=token)
 #     bot.attach_backend(backend)
 
-#     # await bot.run_forever()
+    # await bot.run_forever()

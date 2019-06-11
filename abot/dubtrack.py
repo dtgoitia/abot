@@ -552,6 +552,8 @@ class DubtrackBotBackend(Backend):
                 data.update(user_data)
                 return data
 
+    # TODO: the correct return type is Optional[DubtrackEntity]
+    # a lot calls to ._get_entity() do not check if the returned value is None
     def _get_entity(self, id_or_name):
         user_data = self._get_user_data(id_or_name)
         if not user_data:
