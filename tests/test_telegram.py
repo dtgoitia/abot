@@ -10,6 +10,13 @@ from abot.telegram import TelegramBackend, TelegramMessageEvent
 from tests.conftest import get_config
 
 
+def create_async_generator(*, yield_value):
+    """Return an async generator function that yields ``yield_value`` asynchronously."""
+    async def f():
+        yield yield_value
+    return f
+
+
 @pytest.fixture
 def token():
     """Get Telegram Bot API token from the configuration file or environment variable."""
@@ -34,9 +41,10 @@ def mocked_backend_token(mocker):
 
 @pytest.fixture
 def mocked_backend_updates(mocker):
-    """Patch to TelegramBackend to fake the updates received from the Telegram Bot API."""
-    with am.patch('abot.telegram.TelegramBackend._get_updates', new=am.CoroutineMock()) as m:
-        m.return_value = 'blah'
+    """Patch to TelegramBackend to fake the updates long-polled from the Telegram Bot API."""
+    with am.patch('abot.telegram.TelegramBackend._next_update', new=am.MagicMock()) as m:
+        iterator = create_async_generator(yield_value='test fake update')
+        m.side_effect = iterator
         yield m
 
 
@@ -53,19 +61,19 @@ async def mocked_initialized_backend(mocked_backend_token, mocked_backend_update
 @pytest.fixture
 def chat_message():
     """Update sample for a message from a user to a bot in an individual conversation."""
-    return [{'message': {'chat': {'first_name': 'David',
-                                  'id': 185639288,
-                                  'type': 'private',
-                                  'username': 'david'},
-                         'date': 1560196082,
-                         'from': {'first_name': 'David',
-                                  'id': 185639288,
-                                  'is_bot': False,
-                                  'language_code': 'en',
-                                  'username': 'david'},
-                         'message_id': 42,
-                         'text': 'asd'},
-             'update_id': 218871170}]
+    return {'message': {'chat': {'first_name': 'David',
+                                 'id': 185639288,
+                                 'type': 'private',
+                                 'username': 'david'},
+                        'date': 1560196082,
+                        'from': {'first_name': 'David',
+                                 'id': 185639288,
+                                 'is_bot': False,
+                                 'language_code': 'en',
+                                 'username': 'david'},
+                        'message_id': 42,
+                        'text': 'asd'},
+            'update_id': 218871170}
 
 
 @pytest.fixture
@@ -126,7 +134,7 @@ async def test_backend_checks_token_on_initialize():
 @pytest.mark.asyncio
 async def test_backend_consumes_chat_message(mocked_initialized_backend, chat_message):
     backend = mocked_initialized_backend
-    backend._get_updates.return_value = chat_message
+    backend._next_update.side_effect = create_async_generator(yield_value=chat_message)
 
     event: TelegramMessageEvent
     async for event in backend.consume():

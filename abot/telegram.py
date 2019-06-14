@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import, print_function, unicode_literals
 
-# import asyncio
+import asyncio
 from collections import defaultdict
-# import json
 import logging
 import pprint
-# import ssl
 from typing import Any, AsyncGenerator, Dict, Optional, Union
 
 import aiohttp
-# import certifi  # TODO: needed?
 
 from abot.bot import Backend, BotObject, Channel, Entity, Event, MessageEvent
 
@@ -106,7 +103,7 @@ class TelegramEvent(TelegramObject, Event):
             to = f"@{self.sender.username}"
         return await self._channel.say(f"{to}: {text}")
 
-    # TODO: necessary?
+    # TODO: update as needed
     def __repr__(self):
         cls = self.__class__.__name__
         return f"<{cls} #{self._data['type']}>"
@@ -245,8 +242,6 @@ class TelegramBackend(Backend):
         # default request timeout is 5min:
         # https://docs.aiohttp.org/en/stable/client_quickstart.html#timeouts
         self._updates_timeout: int = 297
-        # TODO: remove timeout=0 (short-polling), only for testing purposes
-        self._updates_timeout = 0
         self.telegram_users = defaultdict(dict)
 
     def configure(self, *, token=None):
@@ -259,14 +254,20 @@ class TelegramBackend(Backend):
             self._token_is_valid = await self.test_bot_token()
 
     async def consume(self) -> AsyncGenerator['TelegramEvent', None]:
-        # TODO: create an infinite? loop that does long polling to get updates,
-        # and returns in an infinite? loop
-        logger.info(f"Consuming...")
         # TODO: check the format of the log and ensure it consistent with the
         # rest of the logs, also ensure it contains TelegramBackend somewhere
-        updates = await self._get_updates()
-        for update in updates:
-            import ipdb; ipdb.set_trace()
+        if self._token_is_valid is False:
+            logger.info(f"Bot token is not valid")
+            return
+
+        logger.info(f"Bot token is valid")
+        logger.info(f"Consuming...")
+        import ipdb; ipdb.set_trace()
+        async for update in self._next_update():
+            # CARRY ON HERE ==========================================================
+            # TODO: create event converter ===========================================
+            # event = self._create_event(update, self)
+            # yield event
             if 'message' in update:
                 event = TelegramMessageEvent(update, self)
             else:
@@ -330,13 +331,19 @@ class TelegramBackend(Backend):
         raise Exception('not implemented yet')
         pass
 
-    async def _get_updates(self):
+    async def _next_update(self) -> AsyncGenerator[dict, None]:
+        """Fetch available updates and yield them one by one."""
+        while (True):
+            updates = await self._get_updates()
+            if updates:
+                for update in updates:
+                    yield update
+
+    async def _get_updates(self) -> Optional[dict]:
         """Returns a list of updates.
 
         Example:
         """
-        if self._token_is_valid is False:
-            return
         url = self._create_url(self._GET_UPDATES)
         body = {
             'offset': self._updates_offset,
@@ -347,13 +354,14 @@ class TelegramBackend(Backend):
         response = await self._api_post(url, body)
         if response['ok'] and 'result' in response:
             updates = response['result']
-            # TODO uncomment these lines to mark updates as read in the Telegram API
-            # if len(updates) > 0:
-            #     last_update_id = updates[-1]['update_id']
-            #     self._updates_offset = last_update_id
+            if len(updates) > 0:
+                last_update_id = updates[-1]['update_id']
+                self._updates_offset = last_update_id + 1
             return updates
-            # TODO: test a situation when there are no new results:
-            # send the latest update ID on the request, and you should not get any new update back
+        # TODO: test a situation when there are no new results:
+        # send the latest update ID on the request, and you should not get any new update back
+        asyncio.sleep(1)
+        return None
 
     def _register_user(self, user_data) -> Optional[TelegramEntity]:
         """User data structure:
