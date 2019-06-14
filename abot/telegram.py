@@ -5,7 +5,7 @@ import asyncio
 from collections import defaultdict
 import logging
 import pprint
-from typing import Any, AsyncGenerator, Dict, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 import aiohttp
 
@@ -228,6 +228,29 @@ class TelegramCommand(TelegramMessageEvent):
         return f'<{cls} {sender}>'
 
 
+def map_update_to_event(update: dict, backend: 'TelegramBackend') -> Optional[TelegramEvent]:
+    if 'message' not in update:
+        return None
+    message = update['message']
+    if 'entities' in message and has_bot_command(message['entities']):
+        # event = TelegramCommandEvent(update, backend)
+        pass
+    if '' in message:
+        event = TelegramMessageEvent(update, backend)
+    else:
+        event = TelegramEvent(update, backend)  # type: ignore
+    return event
+
+
+def has_bot_command(entities: List[dict]) -> bool:
+    """Return true if there is any ``bot_command`` entity type."""
+    for entity in entities:
+        if entity['type'] == 'bot_command':
+            return True
+    else:
+        return False
+
+
 class TelegramBackend(Backend):
     """Official Telegram Bot API methods."""
 
@@ -262,17 +285,10 @@ class TelegramBackend(Backend):
 
         logger.info(f"Bot token is valid")
         logger.info(f"Consuming...")
-        import ipdb; ipdb.set_trace()
         async for update in self._next_update():
-            # CARRY ON HERE ==========================================================
-            # TODO: create event converter ===========================================
-            # event = self._create_event(update, self)
-            # yield event
-            if 'message' in update:
-                event = TelegramMessageEvent(update, self)
-            else:
-                event = TelegramEvent(update, self)  # type: ignore
-            yield event
+            event = map_update_to_event(update, self)
+            if event:
+                yield event
 
     async def send_message(self, chat_id: Union[int, str], text: str) -> dict:
         """Send a text message to chat_id.

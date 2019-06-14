@@ -6,7 +6,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 import asynctest as am
 import pytest
 
-from abot.telegram import TelegramBackend, TelegramMessageEvent
+from abot.telegram import map_update_to_event, TelegramBackend, TelegramMessageEvent
 from tests.conftest import get_config
 
 
@@ -77,21 +77,63 @@ def chat_message():
 
 
 @pytest.fixture
-def group_message():
-    """Update sample for a message from a user to group where the bot is admin."""
+def chat_command():
+    """Update sample for a command from a user to group where the bot is admin."""
     return {'message': {'chat': {'first_name': 'David',
                                  'id': 185639288,
                                  'type': 'private',
                                  'username': 'david'},
-                        'date': 1560196082,
+                        'date': 1560489607,
+                        'entities': [{'length': 3,
+                                      'offset': 0,
+                                      'type': 'bot_command'}],
                         'from': {'first_name': 'David',
                                  'id': 185639288,
                                  'is_bot': False,
                                  'language_code': 'en',
                                  'username': 'david'},
-                        'message_id': 42,
-                        'text': 'asd'},
+                        'message_id': 59,
+                        'text': '/do something'},
             'update_id': 218871170}
+
+
+@pytest.fixture
+def group_message():
+    """Update sample for a message from a user to group where the bot is admin."""
+    return {'message': {'chat': {'all_members_are_administrators': False,
+                                 'id': -362869152,
+                                 'title': 'Test group',
+                                 'type': 'group'},
+                        'date': 1560489939,
+                        'from': {'first_name': 'David',
+                                 'id': 185639288,
+                                 'is_bot': False,
+                                 'language_code': 'en',
+                                 'username': 'david'},
+                        'message_id': 60,
+                        'text': 'jey'},
+            'update_id': 218871170}
+
+
+@pytest.fixture
+def group_command():
+    """Update sample for a command from a user to group where the bot is admin."""
+    return {'message': {'chat': {'all_members_are_administrators': False,
+                                 'id': -362869152,
+                                 'title': 'Test group',
+                                 'type': 'group'},
+                        'date': 1560490154,
+                        'entities': [{'length': 3,
+                                      'offset': 0,
+                                      'type': 'bot_command'}],
+                        'from': {'first_name': 'David',
+                                 'id': 185639288,
+                                 'is_bot': False,
+                                 'language_code': 'en',
+                                 'username': 'david'},
+                        'message_id': 64,
+                        'text': '/do something'},
+            'update_id': 218871193}
 
 
 # TelegramBackend =============================================================
@@ -130,7 +172,45 @@ async def test_backend_checks_token_on_initialize():
     response = await backend.initialize()
     assert response  # TODO: finish this
 
-# @pytest.mark.skip
+
+def test_not_supported_updates(backend):
+    update = {'nonsense': 'blah'}
+    event = map_update_to_event(update, backend)
+    assert event is None
+
+
+def test_map_chat_messages(chat_message, backend):
+    update = chat_message
+    event = map_update_to_event(update, backend)
+
+    assert event.sender['id'] == 185639288
+    assert event.sender['first_name'] == 'David'
+    assert event.sender['username'] == 'david'
+    # TODO: assert sender, etc.
+
+
+@pytest.mark.skip
+def test_map_chat_command(chat_command, backend):
+    update = chat_command
+    event = map_update_to_event(update, backend)
+    assert event is False
+
+
+@pytest.mark.skip
+def test_map_group_message(group_message, backend):
+    update = chat_command
+    event = map_update_to_event(group_message, backend)
+    assert event is False
+
+
+@pytest.mark.skip
+def test_map_group_command(group_command, backend):
+    update = chat_command
+    event = map_update_to_event(group_command, backend)
+    assert event is False
+
+
+@pytest.mark.skip
 @pytest.mark.asyncio
 async def test_backend_consumes_chat_message(mocked_initialized_backend, chat_message):
     backend = mocked_initialized_backend
