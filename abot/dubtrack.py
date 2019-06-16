@@ -52,7 +52,7 @@ class DubtrackChannel(DubtrackObject, Channel):
             await asyncio.sleep(0.5)
 
     @property
-    def entities(self):
+    def entities(self):  # TODO: can I suggest to rename this to be called 'participants'?
         entities = []
         for user in self._dubtrack_backend.dubtrack_users:
             entity = self._dubtrack_backend._get_entity(user)

@@ -6,6 +6,7 @@ from collections import defaultdict
 import logging
 import pprint
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+import weakref
 
 import aiohttp
 
@@ -30,15 +31,18 @@ class TelegramChannel(TelegramObject, Channel):
     """Represents a Telegram conversation.
 
     A TelegramChannel represents one of the following concepts in Telegram:
-      - Telegram user
       - Telegram channel
-      - Telegram conversation
+      - Telegram conversation (where the TelegramChannel is a TelegramUser)
       - Telegram group
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._telegram_backend._register_user(self._data)
 
+    async def say(self, text: str) -> str:
+        for line in text.splitlines():
+            await self._telegram_backend.say
+        
     # TODO: model conversation ID, group ID, channel ID
 
 
@@ -54,16 +58,11 @@ class TelegramEntity(TelegramObject, Entity):
     def id(self):
         return self._data.get('id')
 
-    # TODO: adapt this method to Telegram use case
     def __repr__(self):
         cls = self.__class__.__name__
         userid = self.id
         username = self.username
-        dubs = self.dubs
-        played = self.played_count
-        skips = self.skips
-        songs = self.songs_in_queue
-        return f'<{cls} {username}#{userid} {dubs}/{played} {skips}(S) ##{songs}>'
+        return f'<{cls} {username}#{userid}>'
 
     def __eq__(self, other):
         if not isinstance(other, self.__class__):
@@ -76,9 +75,8 @@ class TelegramEntity(TelegramObject, Entity):
 class TelegramEvent(TelegramObject, Event):
     _data_type = ''
 
-    # TODO: necessary?
     @property
-    def sender(self) -> TelegramEntity:
+    def sender(self) -> Optional[TelegramEntity]:
         pass
 
     # TODO: necessary?
@@ -152,17 +150,29 @@ class TelegramMessageEvent(TelegramEvent, MessageEvent):
 
     # TODO: adapt this to Telegram use case
     @property
-    def sender(self) -> TelegramEntity:
+    def sender(self) -> Optional[TelegramEntity]:
         sender = self._data.get('message', {}).get('from').get('username')
-        return self._telegram_backend._get_entity(sender)
+        entity = self._telegram_backend._get_entity(sender)
+        return entity
 
     @property
-    def text(self):
+    def text(self) -> str:
         return self._data.get('message', {}).get('text')
 
     @property
-    def message_id(self):
+
+    def channel(self) -> TelegramChannel:
+        import ipdb; ipdb.set_trace()
         return self._data.get('message', {}).get('chat').get('id')
+
+    @property
+    def message_id(self) -> str:
+        """Unique message identifier inside a given TelegramChannel."""
+        import ipdb; ipdb.set_trace()
+        return self._data.get('message', {}).get('message_id')
+        # TODO: consider if it is necessary to create a really unique ID. At the
+        # moment, message_id is only unique within a given channel (chat). Is it
+        # necessary to request IDs which are unique
 
     def __repr__(self):
         cls = self.__class__.__name__
@@ -219,7 +229,7 @@ class TelegramCommand(TelegramMessageEvent):
 
     # TODO: adapt this to Telegram use case
     @property
-    def sender(self) -> TelegramEntity:
+    def sender(self) -> Optional[TelegramEntity]:
         return self._telegram_backend._get_entity(self._data.get('username'))
 
     def __repr__(self):
@@ -235,10 +245,10 @@ def map_update_to_event(update: dict, backend: 'TelegramBackend') -> Optional[Te
     if 'entities' in message and has_bot_command(message['entities']):
         # event = TelegramCommandEvent(update, backend)
         pass
-    if '' in message:
-        event = TelegramMessageEvent(update, backend)
     else:
-        event = TelegramEvent(update, backend)  # type: ignore
+        event = TelegramMessageEvent(update, backend)
+    # else:
+    #     event = TelegramEvent(update, backend)  # type: ignore
     return event
 
 
@@ -266,6 +276,7 @@ class TelegramBackend(Backend):
         # https://docs.aiohttp.org/en/stable/client_quickstart.html#timeouts
         self._updates_timeout: int = 297
         self.telegram_users = defaultdict(dict)
+        self.telegram_entites = weakref.WeakValueDictionary()
 
     def configure(self, *, token=None):
         if token:
@@ -393,6 +404,7 @@ class TelegramBackend(Backend):
             return None
         if 'id' in user_data:
             user_id = user_data['id']
+            update_dict['id'] = user_id
         if 'first_name' in user_data:
             update_dict['first_name'] = user_data['first_name']
         if 'username' in user_data:
@@ -401,13 +413,19 @@ class TelegramBackend(Backend):
         self.telegram_users[user_id].update(update_dict)
         # TODO: is this complete?
 
-    def _get_entity(self, id_or_name: str):  # TODO: are return type
+    def _get_entity(self, id_or_name: str) -> Optional[TelegramEntity]:
         # TODO: adapt to Telegram case
         user_data = self._get_user_data(id_or_name)
         if not user_data:
             logger.info(f'Information for user {id_or_name} not available')
-            return
-        return user_data
+            return None
+        user_id = user_data['id']
+        entity = self.telegram_entites.get(user_id)
+        if entity:
+            return entity
+        entity = TelegramEntity(user_data, self)
+        self.telegram_entites[user_id] = entity
+        return entity
 
     def _get_user_data(self, id_or_name):  # TODO: are return type
         # TODO: adapt to Telegram case
@@ -420,57 +438,3 @@ class TelegramBackend(Backend):
                 data = {'id': id}
                 data.update(user_data)
                 return data
-
-
-# class BaseBot:
-#     """
-#     Base class for bot. It's raw bot.
-#     """
-#     def __init__(self, token: str):
-#         """
-#         Instructions how to get Bot token is found here: https://core.telegram.org/bots#3-how-do-i-create-a-bot
-
-#         :param token: token from @BotFather
-#         :type token: :obj:`str`
-#         """
-#         self.__token = token
-
-#         # Asyncio loop instance
-#         self.loop = asyncio.get_event_loop()
-
-#         # aiohttp main session
-#         ssl_context = ssl.create_default_context(cafile=certifi.where())
-#         connector = aiohttp.TCPConnector(ssl=ssl_context, loop=self.loop)
-
-#         self.session = aiohttp.ClientSession(connector=connector, loop=self.loop, json_serialize=json.dumps)
-
-#     async def close(self):
-#         """
-#         Close all client sessions
-#         """
-#         await self.session.close()
-
-#     async def request(self, method: str, data: Optional[Dict] = None,
-#                       **kwargs) -> Union[List, Dict, bool]:
-#         """Make an request to Telegram Bot API.
-
-#         Docs: https://core.telegram.org/bots/api#making-requests
-
-#         :param method: API method
-#         :type method: :obj:`str`
-#         :param data: request parameters
-#         :type data: :obj:`dict`
-#         :return: result
-#         :rtype: Union[List, Dict]
-#         :raise: :obj:`aiogram.exceptions.TelegramApiError`
-#         """
-#         # TODO: what is exactly 'data' parameter
-#         # TODO: what is 'api'
-#         return await self._make_request(self.session, self.__token, method, **kwargs)
-
-#     async def make_request(self, session, token, method, data=None, **kwargs):
-#         url = self._create_url(method_name=method)  # TODO: move to TelegramBackend
-
-#         req = compose_data(data, files)
-#         async with session.post(url, data=req, **kwargs) as response:
-#             return check_result(method, response.content_type, response.status, await response.text())

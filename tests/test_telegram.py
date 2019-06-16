@@ -6,7 +6,12 @@ from __future__ import absolute_import, print_function, unicode_literals
 import asynctest as am
 import pytest
 
-from abot.telegram import map_update_to_event, TelegramBackend, TelegramMessageEvent
+from abot.telegram import map_update_to_event, \
+                          TelegramBackend, \
+                          TelegramChannel, \
+                          TelegramEntity, \
+                          TelegramMessageEvent, \
+                          TelegramUser
 from tests.conftest import get_config
 
 
@@ -181,12 +186,22 @@ def test_not_supported_updates(backend):
 
 def test_map_chat_messages(chat_message, backend):
     update = chat_message
-    event = map_update_to_event(update, backend)
+    event: TelegramMessageEvent = map_update_to_event(update, backend)
 
-    assert event.sender['id'] == 185639288
-    assert event.sender['first_name'] == 'David'
-    assert event.sender['username'] == 'david'
-    # TODO: assert sender, etc.
+    sender: TelegramEntity = event.sender
+    assert isinstance(sender, TelegramEntity)
+    assert sender.id == 185639288
+    assert sender.username == 'david'
+
+    message_id = event.message_id
+    assert isinstance(message_id, str)
+    assert message_id == 42
+
+    channel: TelegramChannel = event.channel
+    assert isinstance(channel, TelegramChannel)
+    # assert isinstance(channel, TelegramUser)  # TODO: implement
+    assert channel.id == 185639288
+    assert channel.name == 'david'
 
 
 @pytest.mark.skip
@@ -198,15 +213,15 @@ def test_map_chat_command(chat_command, backend):
 
 @pytest.mark.skip
 def test_map_group_message(group_message, backend):
-    update = chat_command
-    event = map_update_to_event(group_message, backend)
+    update = group_message
+    event = map_update_to_event(update, backend)
     assert event is False
 
 
 @pytest.mark.skip
 def test_map_group_command(group_command, backend):
-    update = chat_command
-    event = map_update_to_event(group_command, backend)
+    update = group_command
+    event = map_update_to_event(update, backend)
     assert event is False
 
 
