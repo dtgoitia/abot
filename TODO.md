@@ -1,0 +1,40 @@
+- [x] Install `ipdb` to debug async tests.
+- [x] Add fake configuration file (`test_config.json`) for tests, and gitignore it.
+- [x] Investigate how to communicate with the Telegram Bot API.
+- [x] Create backend to consume (fetch) _updates_ from the Telegram Bot API.
+  - [x] Ensure token is valid.
+  - [x] Allow bot to request only new _updates_.
+- [x] Cast Telegram _updates_ to abot `Events`.
+- [ ] Model in abot the following Telegram _update_ types:
+  - [ ] Message in a private chat with the bot
+  - [ ] Message in a group where the bot is an admin member
+  - [ ] Post in a channel ¿where the bot is a member?
+  - [ ] Command in a private chat
+  - [ ] Command in a group
+  - [ ] A new member is added to a group
+- [x] Handle unsupported updates.
+- [ ] Model in abot the following Telegram _channel_ types:
+  - [ ] Telegram user
+  - [ ] Telegram channel
+  - [ ] Telegram conversation
+  - [ ] Telegram group
+- [ ] Ensure each subclass has a `__repr__` and it is meaningful.
+- [ ] Allow the bot to send a message
+- [ ] Allow the bot to reply to a given message
+- [ ] Ensure to store the users involved in the _updates_.
+- [ ] Add logging.
+- [ ] Add tests cases.
+- [ ] Implement test cases.
+- [ ] Prepare fixtures:
+  - [x] Message in a private chat with the bot -> `chat_message`
+  - [x] Message in a group where the bot is an admin member -> `group_message`
+  - [ ] Post in a channel ¿where the bot is a member?
+  - [x] Command in a private chat -> `chat_command`
+  - [x] Command in a group -> `group_command`
+  - [ ] A new member is added to a group
+- [ ] Prepare mocks:
+  - [x] Mocked backend which returns known _updates_.
+- [ ] Add types as required
+- [ ] Try to remove all the `# type: ingore` in the code.
+- [ ] Document:
+  - [ ] Entities: see `abot/dubtrack.py:55`.
